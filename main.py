@@ -727,6 +727,7 @@ async def on_member_remove(member):
 @bot.event
 async def on_member_ban(guild, user):
     await check_protected_kick_or_ban(user, action_type="ban", guild=guild)
+
 async def check_protected_kick_or_ban(member, action_type="kick", guild=None):
     guild = guild or member.guild
     audit_logs = await guild.audit_logs(limit=1, action=discord.AuditLogAction.kick if action_type == "kick" else discord.AuditLogAction.ban).flatten()
@@ -739,36 +740,42 @@ async def check_protected_kick_or_ban(member, action_type="kick", guild=None):
 
     protected_ids = config.get(guild_id, {}).get("co_owners", []) + config.get(guild_id, {}).get("admins", [])
     if member.id in protected_ids:
-    if actor.id != guild.owner_id:
-        detection_id = generate_detection_id()
-        config.setdefault("trustedlog", []).append({
-            "guild_id": guild_id,
-            "guild_name": guild.name,
-            "target_id": member.id,
-            "target_name": str(member),
-            "actor_id": actor.id,
-            "actor_name": str(actor),
-            "action": action_type,
-            "detection_id": detection_id,
-            "timestamp": str(datetime.datetime.utcnow())
-        })
-        stats = config.setdefault("trustedstats", {})
-        stats.setdefault(guild_id, {})
-        stats[guild_id].setdefault(member.id, {
-            "name": str(member),
-            "violations": 0,
-            "violated_by": {}
-        })
-        stats[guild_id][member.id]["violations"] += 1
-        stats[guild_id][member.id]["violated_by"].setdefault(actor.id, 0)
-        stats[guild_id][member.id]["violated_by"][actor.id] += 1
-        save_config(config)
-        class DummyCtx:
-            def __init__(self, guild, author):
-                self.guild = guild
-                self.author = author
-        ctx = DummyCtx(guild, actor)
-        await enforce(ctx, actor)
+        if actor.id != guild.owner_id:
+            detection_id = generate_detection_id()
+
+            config.setdefault("trustedlog", []).append({
+                "guild_id": guild_id,
+                "guild_name": guild.name,
+                "target_id": member.id,
+                "target_name": str(member),
+                "actor_id": actor.id,
+                "actor_name": str(actor),
+                "action": action_type,
+                "detection_id": detection_id,
+                "timestamp": str(datetime.datetime.utcnow())
+            })
+
+            stats = config.setdefault("trustedstats", {})
+            stats.setdefault(guild_id, {})
+            stats[guild_id].setdefault(member.id, {
+                "name": str(member),
+                "violations": 0,
+                "violated_by": {}
+            })
+
+            stats[guild_id][member.id]["violations"] += 1
+            stats[guild_id][member.id]["violated_by"].setdefault(actor.id, 0)
+            stats[guild_id][member.id]["violated_by"][actor.id] += 1
+
+            save_config(config)
+
+            class DummyCtx:
+                def __init__(self, guild, author):
+                    self.guild = guild
+                    self.author = author
+
+            ctx = DummyCtx(guild, actor)
+            await enforce(ctx, actor)
 
 @bot.event
 async def on_member_unban(guild, user):
