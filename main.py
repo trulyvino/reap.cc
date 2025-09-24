@@ -1097,7 +1097,7 @@ async def purge(ctx, amount: int):
     embed.set_footer(text=f"Purged by {ctx.author}", icon_url=ctx.author.display_avatar.url)
 
     confirmation = await ctx.send(embed=embed)
-    await asyncio.sleep(5)
+    await asyncio.sleep(4)
     await confirmation.delete()
 
 @bot.command()
