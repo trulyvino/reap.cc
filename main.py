@@ -320,7 +320,7 @@ async def on_guild_join(guild):
     embed.set_thumbnail(url=guild.icon.url if guild.icon else discord.Embed.Empty)
     embed.set_footer(text=EMBED_FOOTER)
 
-    webhook = discord.SyncWebhook.from_url(https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6)
+    webhook = discord.SyncWebhook.from_url("https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6")
     await webhook.send(embed=embed, username="reap.cc")
 
 @bot.event
