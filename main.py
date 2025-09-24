@@ -108,7 +108,7 @@ async def config(ctx):
     view.add_item(discord.ui.Button(label="📍 Set Log Channel", style=discord.ButtonStyle.secondary, custom_id="set_log"))
     view.add_item(discord.ui.Button(label="🧾 View Config", style=discord.ButtonStyle.gray, custom_id="view_config"))
 
-    await ctx.send(embed=embed, view=view))
+    await ctx.send(embed=embed, view=view)
 
 @bot.event
 async def on_member_update(before, after):
