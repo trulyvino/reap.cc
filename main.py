@@ -869,7 +869,7 @@ async def setstatus(ctx, activity_type: str, *, status_text: str):
 
 @bot.command()
 async def statuspanel(ctx):
-    if ctx.author.id not in STATUS_MANAGERS:
+    if ctx.author.id not in TRUSTED_USERS:
         return await ctx.send("❌ You’re not authorized to manage bot status.")
 
     class StatusView(discord.ui.View):
@@ -905,7 +905,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    if message.author.id in STATUS_MANAGERS and hasattr(bot, "pending_status_type"):
+    if message.author.id in TRUSTED_USERS and hasattr(bot, "pending_status_type"):
         activity_type = bot.pending_status_type
         status_text = message.content
 
@@ -947,5 +947,33 @@ async def broadcast(ctx, *, message: str):
 @bot.event
 async def on_command_error(ctx, error):
     await ctx.send(f"⚠️ Command error: {error}")
+
+@bot.command()
+async def shutdown(ctx):
+    if ctx.author.id not in TRUSTED_USERS:
+        return await ctx.send("❌ You’re not authorized to shut down the bot.")
+
+    class ConfirmShutdown(discord.ui.View):
+        @discord.ui.button(label="Confirm Shutdown", style=discord.ButtonStyle.red)
+        async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != ctx.author.id:
+                return await interaction.response.send_message("🚫 You didn’t initiate this shutdown.", ephemeral=True)
+
+            await interaction.response.send_message("🛑 Bot is shutting down...", ephemeral=True)
+            await bot.close()
+
+        @discord.ui.button(label="Cancel", style=discord.ButtonStyle.gray)
+        async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != ctx.author.id:
+                return await interaction.response.send_message("🚫 You didn’t initiate this shutdown.", ephemeral=True)
+
+            await interaction.response.send_message("✅ Shutdown canceled.", ephemeral=True)
+
+    embed = discord.Embed(
+        title="⚠️ Shutdown Request",
+        description="Click **Confirm Shutdown** to power off the bot.\nOnly the initiator can confirm.",
+        color=discord.Color.red()
+    )
+    await ctx.send(embed=embed, view=ConfirmShutdown())
 
 bot.run(TOKEN)
