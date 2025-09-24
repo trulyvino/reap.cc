@@ -1,0 +1,9 @@
+# 🔒 Hide secrets
+.env
+
+# 🧠 Node.js dependencies
+node_modules/
+
+# 🐍 Python cache
+__pycache__/
+*.pyc{\rtf1}
