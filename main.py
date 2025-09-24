@@ -15,7 +15,7 @@ BROADCASTERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="-", intents=intents)
+bot = commands.Bot(command_prefix=".", intents=intents)
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6"
 EMBED_FOOTER = "reap.cc"
@@ -943,5 +943,9 @@ async def broadcast(ctx, *, message: str):
         await ctx.send(f"✅ Broadcast DM sent to server owner: `{owner}`.")
     except:
         await ctx.send("⚠️ Failed to DM the server owner. They might have DMs disabled.")
+
+@bot.event
+async def on_command_error(ctx, error):
+    await ctx.send(f"⚠️ Command error: {error}")
 
 bot.run(TOKEN)
