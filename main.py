@@ -8,7 +8,7 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix=",", intents=intents)
+bot = commands.Bot(command_prefix="-", intents=intents)
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6"
 EMBED_FOOTER = "reap.cc"
@@ -402,7 +402,7 @@ async def commands(ctx):
     await ctx.send(embed=embed)
 
 @bot.command()
-async def help(ctx):
+async def support(ctx):
     try:
         await ctx.author.send(
             "👋 Need support with our bot or server?\n\nPlease join our support server and create a ticket:\n🔗 https://discord.gg/j6bXmjtfSU"
