@@ -844,4 +844,83 @@ async def trustedstats(ctx):
     embed.set_footer(text="Stats reflect only this server. Cross-server stats coming soon.")
     await ctx.send(embed=embed)
 
+@bot.command()
+async def setstatus(ctx, activity_type: str, *, status_text: str):
+    if ctx.author.id not in TRUSTED_USERS:
+        return await ctx.send("❌ You’re not authorized to change the bot’s status.")
+
+    activity_type = activity_type.lower()
+    if activity_type == "playing":
+        activity = discord.Game(name=status_text)
+    elif activity_type == "watching":
+        activity = discord.Activity(type=discord.ActivityType.watching, name=status_text)
+    elif activity_type == "listening":
+        activity = discord.Activity(type=discord.ActivityType.listening, name=status_text)
+    elif activity_type == "competing":
+        activity = discord.Activity(type=discord.ActivityType.competing, name=status_text)
+    else:
+        return await ctx.send("⚠️ Invalid activity type. Use: `playing`, `watching`, `listening`, or `competing`.")
+
+    await bot.change_presence(activity=activity)
+    await ctx.send(f"✅ Status updated to `{activity_type}`: **{status_text}**")
+
+@bot.command()
+async def statuspanel(ctx):
+    if ctx.author.id not in STATUS_MANAGERS:
+        return await ctx.send("❌ You’re not authorized to manage bot status.")
+
+    class StatusView(discord.ui.View):
+        @discord.ui.button(label="Playing", style=discord.ButtonStyle.green)
+        async def playing(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.response.send_message("🎮 Send the new status text:", ephemeral=True)
+            self.activity_type = "playing"
+
+        @discord.ui.button(label="Watching", style=discord.ButtonStyle.blurple)
+        async def watching(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.response.send_message("👀 Send the new status text:", ephemeral=True)
+            self.activity_type = "watching"
+
+        @discord.ui.button(label="Listening", style=discord.ButtonStyle.gray)
+        async def listening(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.response.send_message("🎧 Send the new status text:", ephemeral=True)
+            self.activity_type = "listening"
+
+        @discord.ui.button(label="Competing", style=discord.ButtonStyle.red)
+        async def competing(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.response.send_message("🏆 Send the new status text:", ephemeral=True)
+            self.activity_type = "competing"
+
+    embed = discord.Embed(
+        title="🎛️ Bot Status Panel",
+        description="Choose an activity type below. You’ll be prompted to enter the status text.",
+        color=discord.Color.gold()
+    )
+    await ctx.send(embed=embed, view=StatusView())
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    if message.author.id in STATUS_MANAGERS and hasattr(bot, "pending_status_type"):
+        activity_type = bot.pending_status_type
+        status_text = message.content
+
+        if activity_type == "playing":
+            activity = discord.Game(name=status_text)
+        elif activity_type == "watching":
+            activity = discord.Activity(type=discord.ActivityType.watching, name=status_text)
+        elif activity_type == "listening":
+            activity = discord.Activity(type=discord.ActivityType.listening, name=status_text)
+        elif activity_type == "competing":
+            activity = discord.Activity(type=discord.ActivityType.competing, name=status_text)
+
+        await bot.change_presence(activity=activity)
+        await message.channel.send(f"✅ Status updated to `{activity_type}`: **{status_text}**")
+        bot.pending_status_type = None
+
+    await bot.process_commands(message)
+
+
+
 bot.run(TOKEN)
