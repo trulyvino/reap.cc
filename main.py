@@ -10,7 +10,7 @@ import string
 
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
-BROADCASTERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]
+BUGREPORT_WEBHOOK = "https://discord.com/api/webhooks/1420557222240583762/lJuNVrrcL_iz1byAe0anDSmXxn-e_obEpaffwvYTESzDYMgp_5-xxWn9ISY8wHEJ9SoJ"  # Replace with your actual webhook URL
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -19,6 +19,19 @@ bot = commands.Bot(command_prefix=".", intents=intents)
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6"
 EMBED_FOOTER = "reap.cc"
+
+def is_trusted(ctx):
+    guild_id = str(ctx.guild.id)
+    owner_id = ctx.guild.owner_id
+    co_owners = config.get(guild_id, {}).get("co_owners", [])
+    admins = config.get(guild_id, {}).get("admins", [])
+    return ctx.author.id == owner_id or ctx.author.id in co_owners or ctx.author.id in admins
+
+def is_config_manager(ctx):
+    guild_id = str(ctx.guild.id)
+    owner_id = ctx.guild.owner_id
+    co_owners = config.get(guild_id, {}).get("co_owners", [])
+    return ctx.author.id == owner_id or ctx.author.id in co_owners
 
 def generate_detection_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
@@ -93,24 +106,89 @@ async def on_ready():
 
 @bot.command()
 async def config(ctx):
-    if not is_owner_or_coowner(ctx):
-        return await ctx.send("❌ Only the server owner or co-owners can access the config menu.")
+    if not is_config_manager(ctx):
+        return await ctx.send("❌ You’re not authorized to manage config.")
+
+    guild_id = str(ctx.guild.id)
+    config.setdefault(guild_id, {}).setdefault("admins", [])
+    config.setdefault(guild_id, {}).setdefault("co_owners", [])
+    config.setdefault(guild_id, {}).setdefault("whitelisted", [])
+    config.setdefault(guild_id, {})["log_channel"] = config[guild_id].get("log_channel", None)
+
+    class ConfigPanel(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=60)
+
+        @discord.ui.button(label="📍 Set Log Channel", style=discord.ButtonStyle.blurple)
+        async def set_log(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != ctx.author.id:
+                return await interaction.response.send_message("🚫 You didn’t initiate this config session.", ephemeral=True)
+
+            config[guild_id]["log_channel"] = ctx.channel.id
+            save_config(config)
+            await interaction.response.send_message(f"✅ Log channel set to `{ctx.channel.name}`.", ephemeral=True)
+
+        @discord.ui.button(label="➕ Add Co-Owner", style=discord.ButtonStyle.green)
+        async def add_coowner(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._handle_user(interaction, "co_owners", "add")
+
+        @discord.ui.button(label="➖ Remove Co-Owner", style=discord.ButtonStyle.red)
+        async def remove_coowner(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._handle_user(interaction, "co_owners", "remove")
+
+        @discord.ui.button(label="➕ Add Admin", style=discord.ButtonStyle.green)
+        async def add_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._handle_user(interaction, "admins", "add")
+
+        @discord.ui.button(label="➖ Remove Admin", style=discord.ButtonStyle.red)
+        async def remove_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._handle_user(interaction, "admins", "remove")
+
+        @discord.ui.button(label="➕ Add Whitelisted", style=discord.ButtonStyle.green)
+        async def add_whitelisted(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._handle_user(interaction, "whitelisted", "add")
+
+        @discord.ui.button(label="➖ Remove Whitelisted", style=discord.ButtonStyle.red)
+        async def remove_whitelisted(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self._handle_user(interaction, "whitelisted", "remove")
+
+        async def _handle_user(self, interaction, role_key, action):
+            if interaction.user.id != ctx.author.id:
+                return await interaction.response.send_message("🚫 You didn’t initiate this config session.", ephemeral=True)
+
+            await interaction.response.send_message(f"👤 Mention the user to `{action}` in `{role_key}`:", ephemeral=True)
+
+            def check(m):
+                return m.author.id == ctx.author.id and m.channel == ctx.channel and m.mentions
+
+            try:
+                msg = await bot.wait_for("message", check=check, timeout=30)
+                target = msg.mentions[0]
+                role_list = config[guild_id][role_key]
+
+                if action == "add":
+                    if target.id not in role_list:
+                        role_list.append(target.id)
+                        save_config(config)
+                        await ctx.send(f"✅ `{target}` added to `{role_key}`.")
+                    else:
+                        await ctx.send(f"⚠️ `{target}` is already in `{role_key}`.")
+                elif action == "remove":
+                    if target.id in role_list:
+                        role_list.remove(target.id)
+                        save_config(config)
+                        await ctx.send(f"✅ `{target}` removed from `{role_key}`.")
+                    else:
+                        await ctx.send(f"⚠️ `{target}` is not in `{role_key}`.")
+            except asyncio.TimeoutError:
+                await ctx.send("⏳ Timed out waiting for mention.")
 
     embed = discord.Embed(
-        title="🛠️ Server Configuration",
-        description="Use the buttons below to manage your anti-nuke settings.",
+        title="⚙️ Config Panel",
+        description="Manage trusted roles and log channel settings using the buttons below.",
         color=discord.Color.blurple()
     )
-    embed.set_footer(text=EMBED_FOOTER)
-
-    view = discord.ui.View()
-
-    view.add_item(discord.ui.Button(label="➕ Add Co-Owner", style=discord.ButtonStyle.primary, custom_id="add_coowner"))
-    view.add_item(discord.ui.Button(label="➕ Add Whitelist", style=discord.ButtonStyle.success, custom_id="add_whitelist"))
-    view.add_item(discord.ui.Button(label="📍 Set Log Channel", style=discord.ButtonStyle.secondary, custom_id="set_log"))
-    view.add_item(discord.ui.Button(label="🧾 View Config", style=discord.ButtonStyle.gray, custom_id="view_config"))
-
-    await ctx.send(embed=embed, view=view)
+    await ctx.send(embed=embed, view=ConfigPanel())
 
 @bot.event
 async def on_member_update(before, after):
@@ -979,5 +1057,123 @@ async def shutdown(ctx):
 @bot.command()
 async def ping(ctx):
     await ctx.send("Pong!")
+
+@bot.command()
+async def broadcastallowners(ctx, *, message: str):
+    if ctx.author.id not in TRUSTED_USERS:
+        return await ctx.send("❌ You’re not authorized to send broadcast messages.")
+
+    embed = discord.Embed(
+        title="📢 Broadcast Message",
+        description=message,
+        color=discord.Color.orange()
+    )
+    embed.set_footer(text=f"Sent by {ctx.author}", icon_url=ctx.author.display_avatar.url)
+
+    success = 0
+    for guild in bot.guilds:
+        try:
+            owner = guild.owner
+            await owner.send(embed=embed)
+            success += 1
+        except:
+            pass  # Owner might have DMs off
+
+    await ctx.send(f"✅ Broadcast DM sent to `{success}` server owner(s).")
+
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def purge(ctx, amount: int):
+    if amount < 1 or amount > 100:
+        return await ctx.send("⚠️ You can only purge between 1 and 100 messages.")
+
+    deleted = await ctx.channel.purge(limit=amount + 1)  # +1 to include the command itself
+
+    embed = discord.Embed(
+        title="🧹 Purge Complete",
+        description=f"Deleted `{len(deleted) - 1}` messages from this channel.",
+        color=discord.Color.red()
+    )
+    embed.set_footer(text=f"Purged by {ctx.author}", icon_url=ctx.author.display_avatar.url)
+
+    confirmation = await ctx.send(embed=embed)
+    await asyncio.sleep(5)
+    await confirmation.delete()
+
+@bot.command()
+async def globalban(ctx, user_id: int, *, reason: str = "No reason provided"):
+    if ctx.author.id not in TRUSTED_USERS:
+        return await ctx.send("❌ You’re not authorized to use global ban.")
+
+    target_user = await bot.fetch_user(user_id)
+    success = 0
+    failed = []
+
+    for guild in bot.guilds:
+        try:
+            await guild.ban(target_user, reason=f"[Global Ban] {reason}")
+            success += 1
+        except Exception as e:
+            failed.append(guild.name)
+
+    embed = discord.Embed(
+        title="🚫 Global Ban Executed",
+        description=f"User `{target_user}` (`{user_id}`) banned from `{success}` server(s).",
+        color=discord.Color.red()
+    )
+    embed.add_field(name="Reason", value=reason, inline=False)
+    if failed:
+        embed.add_field(name="Failed Servers", value="\n".join(failed), inline=False)
+
+    embed.set_footer(text=f"Triggered by {ctx.author}", icon_url=ctx.author.display_avatar.url)
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def bugreport(ctx):
+    if not is_trusted(ctx):
+        return await ctx.send("❌ You’re not authorized to submit bug reports.")
+
+    await ctx.send("📝 Please describe the bug in one message:")
+
+    def check_msg(m):
+        return m.author == ctx.author and m.channel == ctx.channel
+
+    try:
+        bug_msg = await bot.wait_for("message", check=check_msg, timeout=60)
+    except asyncio.TimeoutError:
+        return await ctx.send("⏳ Bug report timed out.")
+
+    await ctx.send("📷 Now upload a screenshot or image of the bug:")
+
+    try:
+        img_msg = await bot.wait_for("message", check=check_msg, timeout=60)
+        image_url = img_msg.attachments[0].url if img_msg.attachments else None
+    except asyncio.TimeoutError:
+        return await ctx.send("⏳ Image upload timed out.")
+
+    if not image_url:
+        return await ctx.send("⚠️ No image detected. Bug report canceled.")
+
+    embed = discord.Embed(
+        title="🐞 Bug Report",
+        description=bug_msg.content,
+        color=discord.Color.orange()
+    )
+    embed.set_author(name=str(ctx.author), icon_url=ctx.author.display_avatar.url)
+    embed.set_image(url=image_url)
+    embed.set_footer(text=f"Reported from {ctx.guild.name}")
+
+    webhook = await ctx.channel.create_webhook(name="BugReportTemp")
+    sent_msg = await webhook.send(embed=embed, username="Bug Reporter", wait=True)
+    await webhook.delete()
+
+    # Create a thread under the bug report message
+    thread = await ctx.channel.create_thread(
+        name=f"Bug: {ctx.author.name}",
+        message=sent_msg,
+        auto_archive_duration=1440  # 24 hours
+    )
+
+    await thread.send(f"🧵 Thread created for bug discussion.\nAnyone affected can reply here.")
 
 bot.run(TOKEN)
