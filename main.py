@@ -740,6 +740,7 @@ async def check_protected_kick_or_ban(member, action_type="kick", guild=None):
     protected_ids = config.get(guild_id, {}).get("co_owners", []) + config.get(guild_id, {}).get("admins", [])
     if member.id in protected_ids:
     if actor.id != guild.owner_id:
+
         detection_id = generate_detection_id()
 
         config.setdefault("trustedlog", []).append({
