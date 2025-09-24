@@ -976,4 +976,8 @@ async def shutdown(ctx):
     )
     await ctx.send(embed=embed, view=ConfirmShutdown())
 
+@bot.command()
+async def ping(ctx):
+    await ctx.send("Pong!")
+
 bot.run(TOKEN)
