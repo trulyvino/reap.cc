@@ -10,6 +10,8 @@ import string
 
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
+BROADCASTERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 intents = discord.Intents.all()
@@ -921,6 +923,24 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+@bot.command()
+async def broadcast(ctx, *, message: str):
+    if ctx.author.id not in BROADCASTERS:
+        return await ctx.send("❌ You’re not authorized to send broadcast messages.")
 
+    owner = ctx.guild.owner  # 🔥 This grabs the server owner automatically
+
+    embed = discord.Embed(
+        title="📢 Broadcast Message",
+        description=message,
+        color=discord.Color.orange()
+    )
+    embed.set_footer(text=f"Sent by {ctx.author}", icon_url=ctx.author.display_avatar.url)
+
+    try:
+        await owner.send(embed=embed)  # 🔥 This sends the DM
+        await ctx.send(f"✅ Broadcast DM sent to server owner: `{owner}`.")
+    except:
+        await ctx.send("⚠️ Failed to DM the server owner. They might have DMs disabled.")
 
 bot.run(TOKEN)
