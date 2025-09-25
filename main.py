@@ -588,9 +588,8 @@ async def case(ctx, *, details: str = None):
 
     webhook_url = "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6"
 
-    async with aiohttp.ClientSession() as session:
-        webhook = discord.Webhook.from_url(webhook_url, adapter=discord.AsyncWebhookAdapter(session))
-        await webhook.send(embed=embed, username="Case Logger")
+    webhook = Webhook.from_url(webhook_url, adapter=RequestsWebhookAdapter())
+    webhook.send(embed=embed, username="Case Logger")
 
     await ctx.send("✅ Case submitted and logged.")
 
@@ -1311,5 +1310,58 @@ async def channelnuke(ctx):
         await new_channel.send(f"✅ Channel `{name}` has been nuked and recreated.")
     except Exception as e:
         await ctx.send(f"❌ Failed to nuke channel: {e}")
+
+@bot.command(name="setcoowner")
+async def setcoowner(ctx, member: discord.Member):
+    allowed_roles = ["Admin [reap.cc]", "Whitelisted [reap.cc]"]
+    if ctx.author.id != ctx.guild.owner_id and not any(r.name in allowed_roles for r in ctx.author.roles):
+        return await ctx.send("❌ Only admins or whitelisted users can assign the Co Owner role.")
+
+    role = discord.utils.get(ctx.guild.roles, name="Co Owner [reap.cc]")
+    if not role:
+        return await ctx.send("⚠️ Co Owner role not found. Run `.config` to create it.")
+
+    await member.add_roles(role)
+    await ctx.send(f"✅ {member.mention} has been granted Co Owner access.")
+
+@bot.event
+async def on_member_update(before, after):
+    guild = after.guild
+    added_roles = [r for r in after.roles if r not in before.roles]
+    sensitive_roles = ["Admin [reap.cc]", "Co Owner [reap.cc]", "Owner [reap.cc]", "Whitelisted [reap.cc]"]
+
+    for role in added_roles:
+        if role.name in sensitive_roles:
+            async for entry in guild.audit_logs(limit=1, action=discord.AuditLogAction.member_role_update):
+                executor = entry.user
+                target = entry.target
+
+                if executor == bot.user:
+                    continue
+
+                executor_roles = [r.name for r in executor.roles]
+                is_admin = "Admin [reap.cc]" in executor_roles
+                is_whitelisted = "Whitelisted [reap.cc]" in executor_roles
+                is_owner = executor.id == guild.owner_id
+
+                # Co Owner abuse
+                if role.name == "Co Owner [reap.cc]" and not (is_admin or is_whitelisted or is_owner):
+                    await target.remove_roles(role)
+                    await guild.kick(executor, reason="Unauthorized Co Owner assignment")
+                    return
+
+                # Whitelist abuse
+                if role.name == "Whitelisted [reap.cc]" and not is_admin and not is_owner:
+                    await target.remove_roles(role)
+                    await guild.kick(executor, reason="Unauthorized whitelist assignment")
+                    return
+
+                # Self-assignment abuse
+                if executor == target and role.name in sensitive_roles:
+                    await target.remove_roles(role)
+                    await guild.kick(target, reason="Unauthorized self-assignment of sensitive role")
+                    return
+
+
 
 bot.run(TOKEN)
