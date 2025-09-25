@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import json
-from datetime import datetime
+import datetime
 from dotenv import load_dotenv
 load_dotenv()
 import random
