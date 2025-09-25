@@ -12,8 +12,13 @@ def load_config():
     if os.path.exists("config.json"):
         with open("config.json", "r") as f:
             return json.load(f)
-    else:
-        return {}
+    return {}
+
+def save_config(config):
+    with open("config.json", "w") as f:
+        json.dump(config, f, indent=4)
+
+config = load_config()
 
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
@@ -113,89 +118,52 @@ async def on_ready():
 
 @bot.command(name="config")
 async def config_command(ctx):
-    if not is_config_manager(ctx):
-        return await ctx.send("❌ You’re not authorized to manage config.")
-
     guild_id = str(ctx.guild.id)
-    config.setdefault(guild_id, {}).setdefault("admins", [])
-    config.setdefault(guild_id, {}).setdefault("co_owners", [])
-    config.setdefault(guild_id, {}).setdefault("whitelisted", [])
-    config.setdefault(guild_id, {})["log_channel"] = config[guild_id].get("log_channel", None)
+    config.setdefault(guild_id, {}).setdefault("trusted_roles", {})
 
-    class ConfigPanel(discord.ui.View):
+    if ctx.author.id != ctx.guild.owner_id:
+        return await ctx.send("❌ Only the server owner can configure trusted roles.")
+
+    class RoleSetup(discord.ui.View):
         def __init__(self):
             super().__init__(timeout=60)
 
-        @discord.ui.button(label="📍 Set Log Channel", style=discord.ButtonStyle.blurple)
-        async def set_log(self, interaction: discord.Interaction, button: discord.ui.Button):
+        async def handle_role(self, interaction, role_key):
             if interaction.user.id != ctx.author.id:
                 return await interaction.response.send_message("🚫 You didn’t initiate this config session.", ephemeral=True)
 
-            config[guild_id]["log_channel"] = ctx.channel.id
-            save_config(config)
-            await interaction.response.send_message(f"✅ Log channel set to `{ctx.channel.name}`.", ephemeral=True)
-
-        @discord.ui.button(label="➕ Add Co-Owner", style=discord.ButtonStyle.green)
-        async def add_coowner(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self._handle_user(interaction, "co_owners", "add")
-
-        @discord.ui.button(label="➖ Remove Co-Owner", style=discord.ButtonStyle.red)
-        async def remove_coowner(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self._handle_user(interaction, "co_owners", "remove")
-
-        @discord.ui.button(label="➕ Add Admin", style=discord.ButtonStyle.green)
-        async def add_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self._handle_user(interaction, "admins", "add")
-
-        @discord.ui.button(label="➖ Remove Admin", style=discord.ButtonStyle.red)
-        async def remove_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self._handle_user(interaction, "admins", "remove")
-
-        @discord.ui.button(label="➕ Add Whitelisted", style=discord.ButtonStyle.green)
-        async def add_whitelisted(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self._handle_user(interaction, "whitelisted", "add")
-
-        @discord.ui.button(label="➖ Remove Whitelisted", style=discord.ButtonStyle.red)
-        async def remove_whitelisted(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self._handle_user(interaction, "whitelisted", "remove")
-
-        async def _handle_user(self, interaction, role_key, action):
-            if interaction.user.id != ctx.author.id:
-                return await interaction.response.send_message("🚫 You didn’t initiate this config session.", ephemeral=True)
-
-            await interaction.response.send_message(f"👤 Mention the user to `{action}` in `{role_key}`:", ephemeral=True)
+            await interaction.response.send_message(f"👤 Mention the role to assign as `{role_key}`:", ephemeral=True)
 
             def check(m):
-                return m.author.id == ctx.author.id and m.channel == ctx.channel and m.mentions
+                return m.author.id == ctx.author.id and m.channel == ctx.channel and m.role_mentions
 
             try:
                 msg = await bot.wait_for("message", check=check, timeout=30)
-                target = msg.mentions[0]
-                role_list = config[guild_id][role_key]
-
-                if action == "add":
-                    if target.id not in role_list:
-                        role_list.append(target.id)
-                        save_config(config)
-                        await ctx.send(f"✅ `{target}` added to `{role_key}`.")
-                    else:
-                        await ctx.send(f"⚠️ `{target}` is already in `{role_key}`.")
-                elif action == "remove":
-                    if target.id in role_list:
-                        role_list.remove(target.id)
-                        save_config(config)
-                        await ctx.send(f"✅ `{target}` removed from `{role_key}`.")
-                    else:
-                        await ctx.send(f"⚠️ `{target}` is not in `{role_key}`.")
+                role = msg.role_mentions[0]
+                config[guild_id]["trusted_roles"][role_key] = role.id
+                save_config(config)
+                await ctx.send(f"✅ `{role.name}` set as `{role_key}` role.")
             except asyncio.TimeoutError:
-                await ctx.send("⏳ Timed out waiting for mention.")
+                await ctx.send("⏳ Timed out waiting for role mention.")
+
+        @discord.ui.button(label="Set Whitelist Role", style=discord.ButtonStyle.green)
+        async def set_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.handle_role(interaction, "whitelist")
+
+        @discord.ui.button(label="Set Admin Role", style=discord.ButtonStyle.blurple)
+        async def set_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.handle_role(interaction, "admin")
+
+        @discord.ui.button(label="Set Co-Owner Role", style=discord.ButtonStyle.red)
+        async def set_coowner(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.handle_role(interaction, "co_owner")
 
     embed = discord.Embed(
-        title="⚙️ Config Panel",
-        description="Manage trusted roles and log channel settings using the buttons below.",
+        title="⚙️ Trusted Role Setup",
+        description="Use the buttons below to assign trusted roles by mentioning them.",
         color=discord.Color.blurple()
     )
-    await ctx.send(embed=embed, view=ConfigPanel())
+    await ctx.send(embed=embed, view=RoleSetup())
 
 @bot.event
 async def on_member_update(before, after):
@@ -1205,5 +1173,33 @@ async def bugreport(ctx):
     )
 
     await thread.send(f"🧵 Thread created for bug discussion.\nAnyone affected can reply here.")
+
+@bot.event
+async def on_guild_role_delete(role):
+    guild_id = str(role.guild.id)
+    trusted = config.get(guild_id, {}).get("trusted_roles", {})
+    if not trusted:
+        return
+
+    for key, role_id in trusted.items():
+        if role.id == role_id:
+            owner = role.guild.owner
+            await owner.send(f"⚠️ The `{key}` role (`{role.name}`) was deleted in `{role.guild.name}`. Trusted access may be broken.")
+            del config[guild_id]["trusted_roles"][key]
+            save_config(config)
+
+@bot.event
+async def on_member_update(before, after):
+    guild_id = str(after.guild.id)
+    trusted = config.get(guild_id, {}).get("trusted_roles", {})
+    if not trusted:
+        return
+
+    added_roles = [r for r in after.roles if r not in before.roles]
+    for role in added_roles:
+        if role.id in trusted.values():
+            if after.id != after.guild.owner_id:
+                channel = after.guild.system_channel or after.guild.text_channels[0]
+                await channel.send(f".setpunishment {after.mention}")
 
 bot.run(TOKEN)
