@@ -8,18 +8,6 @@ load_dotenv()
 import random
 import string
 
-def load_config():
-    if os.path.exists("config.json"):
-        with open("config.json", "r") as f:
-            return json.load(f)
-    return {}
-
-def save_config(config):
-    with open("config.json", "w") as f:
-        json.dump(config, f, indent=4)
-
-config = load_config()
-
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
 BUGREPORT_WEBHOOK = "https://discord.com/api/webhooks/1420557222240583762/lJuNVrrcL_iz1byAe0anDSmXxn-e_obEpaffwvYTESzDYMgp_5-xxWn9ISY8wHEJ9SoJ"  # Replace with your actual webhook URL
@@ -118,52 +106,54 @@ async def on_ready():
 
 @bot.command(name="config")
 async def config_command(ctx):
-    guild_id = str(ctx.guild.id)
-    config.setdefault(guild_id, {}).setdefault("trusted_roles", {})
-
     if ctx.author.id != ctx.guild.owner_id:
-        return await ctx.send("❌ Only the server owner can configure trusted roles.")
+        return await ctx.send("❌ Only the server owner can use this command.")
 
-    class RoleSetup(discord.ui.View):
+    class RoleGiver(discord.ui.View):
         def __init__(self):
             super().__init__(timeout=60)
 
-        async def handle_role(self, interaction, role_key):
+        async def handle(self, interaction, role_name):
             if interaction.user.id != ctx.author.id:
                 return await interaction.response.send_message("🚫 You didn’t initiate this config session.", ephemeral=True)
 
-            await interaction.response.send_message(f"👤 Mention the role to assign as `{role_key}`:", ephemeral=True)
+            await interaction.response.send_message(f"👤 Mention the user to give `{role_name}`:", ephemeral=True)
 
             def check(m):
-                return m.author.id == ctx.author.id and m.channel == ctx.channel and m.role_mentions
+                return m.author.id == ctx.author.id and m.channel == ctx.channel and m.mentions
 
             try:
                 msg = await bot.wait_for("message", check=check, timeout=30)
-                role = msg.role_mentions[0]
-                config[guild_id]["trusted_roles"][role_key] = role.id
-                save_config(config)
-                await ctx.send(f"✅ `{role.name}` set as `{role_key}` role.")
+                member = msg.mentions[0]
+                role = discord.utils.get(ctx.guild.roles, name=role_name)
+
+                if not role:
+                    role = await ctx.guild.create_role(name=role_name)
+                    await ctx.send(f"🛠️ Created new role `{role_name}`.")
+
+                await member.add_roles(role)
+                await ctx.send(f"✅ `{member}` has been given the `{role_name}` role.")
             except asyncio.TimeoutError:
-                await ctx.send("⏳ Timed out waiting for role mention.")
+                await ctx.send("⏳ Timed out waiting for mention.")
 
-        @discord.ui.button(label="Set Whitelist Role", style=discord.ButtonStyle.green)
-        async def set_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self.handle_role(interaction, "whitelist")
+        @discord.ui.button(label="Give Admin [reap.cc]", style=discord.ButtonStyle.blurple)
+        async def give_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.handle(interaction, "Admin [reap.cc]")
 
-        @discord.ui.button(label="Set Admin Role", style=discord.ButtonStyle.blurple)
-        async def set_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self.handle_role(interaction, "admin")
+        @discord.ui.button(label="Give Co Owner [reap.cc]", style=discord.ButtonStyle.red)
+        async def give_coowner(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.handle(interaction, "Co Owner [reap.cc]")
 
-        @discord.ui.button(label="Set Co-Owner Role", style=discord.ButtonStyle.red)
-        async def set_coowner(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self.handle_role(interaction, "co_owner")
+        @discord.ui.button(label="Give Whitelist [reap.cc]", style=discord.ButtonStyle.green)
+        async def give_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await self.handle(interaction, "Whitelist [reap.cc]")
 
     embed = discord.Embed(
-        title="⚙️ Trusted Role Setup",
-        description="Use the buttons below to assign trusted roles by mentioning them.",
+        title="⚙️ Role Assignment Panel",
+        description="Click a button, mention a user, and they’ll get the role instantly.",
         color=discord.Color.blurple()
     )
-    await ctx.send(embed=embed, view=RoleSetup())
+    await ctx.send(embed=embed, view=RoleGiver())
 
 @bot.event
 async def on_member_update(before, after):
