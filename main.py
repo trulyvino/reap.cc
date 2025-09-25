@@ -8,6 +8,8 @@ load_dotenv()
 import random
 import string
 
+config = load_config()
+
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
 BUGREPORT_WEBHOOK = "https://discord.com/api/webhooks/1420557222240583762/lJuNVrrcL_iz1byAe0anDSmXxn-e_obEpaffwvYTESzDYMgp_5-xxWn9ISY8wHEJ9SoJ"  # Replace with your actual webhook URL
@@ -1082,12 +1084,14 @@ async def broadcastallowners(ctx, *, message: str):
     await ctx.send(f"✅ Broadcast DM sent to `{success}` server owner(s).")
 
 @bot.command()
-@commands.has_permissions(manage_messages=True)
 async def purge(ctx, amount: int):
+    if not ctx.author.guild_permissions.manage_messages:
+        return await ctx.send("❌ You don’t have permission to purge messages.")
+
     if amount < 1 or amount > 100:
         return await ctx.send("⚠️ You can only purge between 1 and 100 messages.")
 
-    deleted = await ctx.channel.purge(limit=amount + 1)  # +1 to include the command itself
+    deleted = await ctx.channel.purge(limit=amount + 1)
 
     embed = discord.Embed(
         title="🧹 Purge Complete",
