@@ -1238,13 +1238,13 @@ async def on_command(ctx):
 
 @bot.command(name="suggest")
 async def suggest(ctx, *, suggestion: str):
+    if not hasattr(bot, "suggestion_count"):
+        bot.suggestion_count = {}
+
     guild_id = str(ctx.guild.id)
     bot.suggestion_count.setdefault(guild_id, 0)
     bot.suggestion_count[guild_id] += 1
     number = bot.suggestion_count[guild_id]
-
-    if not hasattr(bot, "suggestion_count"):
-    bot.suggestion_count = {}
 
     embed = discord.Embed(
         title=f"💡 Suggestion #{number}",
@@ -1255,12 +1255,16 @@ async def suggest(ctx, *, suggestion: str):
     embed.set_author(name=str(ctx.author), icon_url=ctx.author.display_avatar.url)
     embed.set_footer(text="reap.cc suggestions")
 
-    message = await ctx.send(embed=embed)
-    await message.add_reaction("✅")
-    await message.add_reaction("❌")
+    # 🔁 Paste your webhook URL here
+    webhook_url = "https://discord.com/api/webhooks/1420895162594496574/Pm-s1kp4YPQPsDMXVHUBPfvROrzYFwJ7D-qf8aiJyg3u_swOGpmA4AC6PFi8f9bkKdYC"
 
+    async with aiohttp.ClientSession() as session:
+        webhook = discord.Webhook.from_url(webhook_url, adapter=discord.AsyncWebhookAdapter(session))
+        sent_msg = await webhook.send(embed=embed, username="reap.cc", wait=True)
+
+    # Create a thread under the suggestion message
     thread_name = f"💬 Suggestion #{number}"
-    await message.create_thread(name=thread_name, auto_archive_duration=1440)
+    await sent_msg.create_thread(name=thread_name, auto_archive_duration=1440)
 
 @bot.command(name="gitpush")
 async def gitpush(ctx):
