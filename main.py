@@ -9,9 +9,7 @@ import random
 import string
 import aiohttp
 import subprocess
-
-if not hasattr(bot, "suggestion_count"):
-    bot.suggestion_count = {}
+import asyncio
 
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
@@ -1010,7 +1008,7 @@ async def on_message(message):
 
 @bot.command()
 async def broadcast(ctx, *, message: str):
-    if ctx.author.id not in BROADCASTERS:
+    if ctx.author.id not in TRUSTED_USERS:
         return await ctx.send("❌ You’re not authorized to send broadcast messages.")
 
     owner = ctx.guild.owner  # 🔥 This grabs the server owner automatically
@@ -1244,6 +1242,9 @@ async def suggest(ctx, *, suggestion: str):
     bot.suggestion_count.setdefault(guild_id, 0)
     bot.suggestion_count[guild_id] += 1
     number = bot.suggestion_count[guild_id]
+
+    if not hasattr(bot, "suggestion_count"):
+    bot.suggestion_count = {}
 
     embed = discord.Embed(
         title=f"💡 Suggestion #{number}",
