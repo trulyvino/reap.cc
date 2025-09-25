@@ -10,6 +10,7 @@ import string
 import aiohttp
 import subprocess
 import asyncio
+from discord import Webhook
 
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
@@ -1362,6 +1363,16 @@ async def on_member_update(before, after):
                     await guild.kick(target, reason="Unauthorized self-assignment of sensitive role")
                     return
 
+@bot.command(name="setwhitelist")
+async def setwhitelist(ctx, member: discord.Member):
+    if not is_admin(ctx):
+        return await ctx.send("❌ Only admins can assign the Whitelisted role.")
 
+    role = discord.utils.get(ctx.guild.roles, name="Whitelisted [reap.cc]")
+    if not role:
+        return await ctx.send("⚠️ Whitelisted role not found. Run `.config` to create it.")
+
+    await member.add_roles(role)
+    await ctx.send(f"✅ {member.mention} has been whitelisted.")
 
 bot.run(TOKEN)
