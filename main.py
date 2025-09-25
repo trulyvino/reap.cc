@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 load_dotenv()
 import random
 import string
+import aiohttp
+import subprocess
+
+if not hasattr(bot, "suggestion_count"):
+    bot.suggestion_count = {}
 
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
@@ -60,9 +65,13 @@ def save_config(data):
 
 # Send embed to webhook
 async def send_webhook_embed(embed):
-    webhook = discord.SyncWebhook.from_url("https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6")
-    embed.set_footer(text=EMBED_FOOTER)
-    await webhook.send(embed=embed, username="reap.cc")
+    async with aiohttp.ClientSession() as session:
+        webhook = discord.Webhook.from_url(
+            "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6",
+            adapter=discord.AsyncWebhookAdapter(session)
+        )
+        embed.set_footer(text=EMBED_FOOTER)
+        await webhook.send(embed=embed, username="reap.cc")
 
 async def enforce(ctx, user: discord.Member):
     guild_id = str(ctx.guild.id)
@@ -109,6 +118,16 @@ async def config_command(ctx):
     if ctx.author.id != ctx.guild.owner_id:
         return await ctx.send("❌ Only the server owner can use this command.")
 
+    # Runtime-only storage
+    if not hasattr(bot, "trusted_roles"):
+        bot.trusted_roles = {}
+    if not hasattr(bot, "log_channels"):
+        bot.log_channels = {}
+
+    guild_id = str(ctx.guild.id)
+    bot.trusted_roles.setdefault(guild_id, {})
+    bot.log_channels.setdefault(guild_id, None)
+
     class RoleGiver(discord.ui.View):
         def __init__(self):
             super().__init__(timeout=60)
@@ -132,6 +151,7 @@ async def config_command(ctx):
                     await ctx.send(f"🛠️ Created new role `{role_name}`.")
 
                 await member.add_roles(role)
+                bot.trusted_roles[guild_id][role_name] = role.id
                 await ctx.send(f"✅ `{member}` has been given the `{role_name}` role.")
             except asyncio.TimeoutError:
                 await ctx.send("⏳ Timed out waiting for mention.")
@@ -148,12 +168,12 @@ async def config_command(ctx):
         async def give_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
             await self.handle(interaction, "Whitelist [reap.cc]")
 
-    embed = discord.Embed(
-        title="⚙️ Role Assignment Panel",
-        description="Click a button, mention a user, and they’ll get the role instantly.",
-        color=discord.Color.blurple()
-    )
-    await ctx.send(embed=embed, view=RoleGiver())
+        @discord.ui.button(label="📍 Set Log Channel", style=discord.ButtonStyle.gray)
+        async def set_log_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
+            if interaction.user.id != ctx.author.id:
+                return await interaction.response.send_message("🚫 You didn’t initiate this config session.", ephemeral=True)
+
+            bot
 
 @bot.event
 async def on_member_update(before, after):
@@ -1079,7 +1099,7 @@ async def purge(ctx, amount: int):
 
     embed = discord.Embed(
         title="🧹 Purge Complete",
-        description=f"Deleted `{len(deleted) - 1}` messages from this channel.",
+        description=f"Deleted `{len(deleted) - 1}` messages from {ctx.channel.mention}.",
         color=discord.Color.red()
     )
     embed.set_footer(text=f"Purged by {ctx.author}", icon_url=ctx.author.display_avatar.url)
@@ -1087,6 +1107,8 @@ async def purge(ctx, amount: int):
     confirmation = await ctx.send(embed=embed)
     await asyncio.sleep(4)
     await confirmation.delete()
+
+    await send_webhook_embed(embed)
 
 @bot.command()
 async def globalban(ctx, user_id: int, *, reason: str = "No reason provided"):
@@ -1145,24 +1167,29 @@ async def bugreport(ctx):
     embed = discord.Embed(
         title="🐞 Bug Report",
         description=bug_msg.content,
-        color=discord.Color.orange()
+        color=discord.Color.orange(),
+        timestamp=datetime.datetime.utcnow()
     )
     embed.set_author(name=str(ctx.author), icon_url=ctx.author.display_avatar.url)
     embed.set_image(url=image_url)
     embed.set_footer(text=f"Reported from {ctx.guild.name}")
 
-    webhook = await ctx.channel.create_webhook(name="BugReportTemp")
-    sent_msg = await webhook.send(embed=embed, username="Bug Reporter", wait=True)
-    await webhook.delete()
+    # 🔁 Paste your webhook URL here
+    webhook_url = "https://discord.com/api/webhooks/1420557222240583762/lJuNVrrcL_iz1byAe0anDSmXxn-e_obEpaffwvYTESzDYMgp_5-xxWn9ISY8wHEJ9SoJ"
 
-    # Create a thread under the bug report message
-    thread = await ctx.channel.create_thread(
+    async with aiohttp.ClientSession() as session:
+        webhook = discord.Webhook.from_url(webhook_url, adapter=discord.AsyncWebhookAdapter(session))
+        await webhook.send(embed=embed, username="Bug Reporter")
+
+    # Send embed to channel
+    sent_msg = await ctx.send(embed=embed)
+
+    # Create thread under the bug report message
+    thread = await sent_msg.create_thread(
         name=f"Bug: {ctx.author.name}",
-        message=sent_msg,
-        auto_archive_duration=1440  # 24 hours
+        auto_archive_duration=1440
     )
-
-    await thread.send(f"🧵 Thread created for bug discussion.\nAnyone affected can reply here.")
+    await thread.send("🧵 Thread created for bug discussion.\nAnyone affected can reply here.")
 
 @bot.event
 async def on_guild_role_delete(role):
@@ -1191,5 +1218,88 @@ async def on_member_update(before, after):
             if after.id != after.guild.owner_id:
                 channel = after.guild.system_channel or after.guild.text_channels[0]
                 await channel.send(f".setpunishment {after.mention}")
+
+@bot.event
+async def on_command(ctx):
+    embed = discord.Embed(
+        title="🧾 Command Executed",
+        description=f"`{ctx.command}` was used by {ctx.author.mention}",
+        color=discord.Color.dark_gray(),
+        timestamp=datetime.datetime.utcnow()
+    )
+    embed.add_field(name="Executed By", value=str(ctx.author), inline=True)
+    embed.add_field(name="Channel", value=str(ctx.channel), inline=True)
+    embed.set_footer(text="reap.cc", icon_url=ctx.author.display_avatar.url)
+
+    async with aiohttp.ClientSession() as session:
+        webhook = discord.Webhook.from_url(
+            "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6",  # Replace with your actual webhook URL
+            adapter=discord.AsyncWebhookAdapter(session)
+        )
+        await webhook.send(embed=embed, username="reap.cc")
+
+@bot.command(name="suggest")
+async def suggest(ctx, *, suggestion: str):
+    guild_id = str(ctx.guild.id)
+    bot.suggestion_count.setdefault(guild_id, 0)
+    bot.suggestion_count[guild_id] += 1
+    number = bot.suggestion_count[guild_id]
+
+    embed = discord.Embed(
+        title=f"💡 Suggestion #{number}",
+        description=suggestion,
+        color=discord.Color.blurple(),
+        timestamp=datetime.datetime.utcnow()
+    )
+    embed.set_author(name=str(ctx.author), icon_url=ctx.author.display_avatar.url)
+    embed.set_footer(text="reap.cc suggestions")
+
+    message = await ctx.send(embed=embed)
+    await message.add_reaction("✅")
+    await message.add_reaction("❌")
+
+    thread_name = f"💬 Suggestion #{number}"
+    await message.create_thread(name=thread_name, auto_archive_duration=1440)
+
+@bot.command(name="gitpush")
+async def gitpush(ctx):
+    if ctx.author.id not in TRUSTED_USERS:
+        return await ctx.send("❌ You’re not authorized to push updates.")
+
+    await ctx.send("📝 What should the commit message be?")
+
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel
+
+    try:
+        msg = await bot.wait_for("message", check=check, timeout=60)
+        commit_message = msg.content
+    except asyncio.TimeoutError:
+        return await ctx.send("⏳ Timed out waiting for commit message.")
+
+    try:
+        subprocess.run(["git", "add", "."], check=True)
+        subprocess.run(["git", "commit", "-m", commit_message], check=True)
+        subprocess.run(["git", "push"], check=True)
+        await ctx.send(f"✅ Git push complete with commit message: `{commit_message}`")
+    except subprocess.CalledProcessError as e:
+        await ctx.send(f"⚠️ Git error: `{e}`")
+
+
+@bot.command(name="restart")
+async def restart(ctx):
+    if ctx.author.id not in TRUSTED_USERS:
+        return await ctx.send("❌ You’re not authorized to restart the bot.")
+
+    embed = discord.Embed(
+        title="🔄 Restarting Bot",
+        description="The bot is restarting now...",
+        color=discord.Color.red(),
+        timestamp=datetime.datetime.utcnow()
+    )
+    embed.set_footer(text="reap.cc")
+
+    await ctx.send(embed=embed)
+    await bot.close()  # Make sure your process manager auto-restarts the bot
 
 bot.run(TOKEN)
