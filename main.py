@@ -8,7 +8,12 @@ load_dotenv()
 import random
 import string
 
-config = load_config()
+def load_config():
+    if os.path.exists("config.json"):
+        with open("config.json", "r") as f:
+            return json.load(f)
+    else:
+        return {}
 
 TRUSTED_USERS = [1187555433116864673, 1237857990690738381, 1331737864706199623]  # Replace with actual user IDs
 
