@@ -621,7 +621,7 @@ async def cases(ctx, *, case_summary: str = None):
 
     @bot.event
     async def on_interaction(interaction):
-        nonlocal page_index
+        global page_index
         if interaction.data["custom_id"] == "prev":
             page_index = max(0, page_index - 1)
         elif interaction.data["custom_id"] == "next":
