@@ -111,8 +111,8 @@ async def enforce(ctx, user: discord.Member):
 async def on_ready():
     print(f"Bot is online as {bot.user}")
 
-@bot.command()
-async def config(ctx):
+@bot.command(name="config")
+async def config_command(ctx):
     if not is_config_manager(ctx):
         return await ctx.send("❌ You’re not authorized to manage config.")
 
@@ -473,22 +473,43 @@ async def servers(ctx):
 
 @bot.command()
 async def commands(ctx):
-    embed = discord.Embed(
-        title="📜 Available Commands",
-        description="Here’s a list of all active commands:",
-        color=discord.Color.blurple()
-    )
+    commands_list = [cmd for cmd in bot.commands if not cmd.hidden]
+    pages = [commands_list[i:i+25] for i in range(0, len(commands_list), 25)]
+    page_index = 0
 
-    for command in bot.commands:
-        if not command.hidden:
+    def build_embed(page):
+        embed = discord.Embed(
+            title="📜 Available Commands",
+            description="Here’s a list of all active commands:",
+            color=discord.Color.blurple()
+        )
+        for command in page:
             embed.add_field(
                 name=f"• {ctx.prefix}{command.name}",
                 value=command.help or "No description provided.",
                 inline=False
             )
+        embed.set_footer(text=f"Page {page_index + 1} of {len(pages)}")
+        return embed
 
-    embed.set_footer(text=EMBED_FOOTER)
-    await ctx.send(embed=embed)
+    view = discord.ui.View()
+
+    async def update(interaction):
+        await interaction.response.edit_message(embed=build_embed(pages[page_index]), view=view)
+
+    view.add_item(discord.ui.Button(label="⬅️ Prev", style=discord.ButtonStyle.secondary, custom_id="prev"))
+    view.add_item(discord.ui.Button(label="➡️ Next", style=discord.ButtonStyle.secondary, custom_id="next"))
+
+    @bot.event
+    async def on_interaction(interaction):
+        nonlocal page_index
+        if interaction.data["custom_id"] == "prev":
+            page_index = max(0, page_index - 1)
+        elif interaction.data["custom_id"] == "next":
+            page_index = min(len(pages) - 1, page_index + 1)
+        await update(interaction)
+
+    await ctx.send(embed=build_embed(pages[page_index]), view=view)
 
 @bot.command()
 async def support(ctx):
