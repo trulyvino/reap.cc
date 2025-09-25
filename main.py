@@ -23,6 +23,19 @@ bot = commands.Bot(command_prefix=".", intents=intents)
 WEBHOOK_URL = "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6"
 EMBED_FOOTER = "reap.cc"
 
+def has_bug_access(ctx):
+    return (
+        ctx.author.id == ctx.guild.owner_id or
+        any(role.name in ["Admin [reap.cc]", "Co Owner [reap.cc]", "Owner [reap.cc]"] for role in ctx.author.roles)
+    )
+
+def has_case_access(ctx):
+    return (
+        ctx.author.id == ctx.guild.owner_id or
+        any(role.name == "Admin [reap.cc]" for role in ctx.author.roles) or
+        any(role.name == "Co Owner [reap.cc]" for role in ctx.author.roles)
+    )
+
 def is_trusted(ctx):
     guild_id = str(ctx.guild.id)
     owner_id = ctx.guild.owner_id
@@ -112,66 +125,35 @@ async def on_ready():
     print(f"Bot is online as {bot.user}")
 
 @bot.command(name="config")
-async def config_command(ctx):
-    if ctx.author.id != ctx.guild.owner_id:
-        return await ctx.send("❌ Only the server owner can use this command.")
+async def config(ctx):
+    if ctx.author.id != ctx.guild.owner_id and not discord.utils.get(ctx.author.roles, name="Co Owner [reap.cc]"):
+        return await ctx.send("❌ Only the server owner or co-owner can run `.config`.")
 
-    # Runtime-only storage
-    if not hasattr(bot, "trusted_roles"):
-        bot.trusted_roles = {}
-    if not hasattr(bot, "log_channels"):
-        bot.log_channels = {}
+    role_names = ["Admin [reap.cc]", "Co Owner [reap.cc]", "Whitelisted [reap.cc]"]
+    created_roles = []
 
-    guild_id = str(ctx.guild.id)
-    bot.trusted_roles.setdefault(guild_id, {})
-    bot.log_channels.setdefault(guild_id, None)
+    for name in role_names:
+        existing = discord.utils.get(ctx.guild.roles, name=name)
+        if not existing:
+            new_role = await ctx.guild.create_role(name=name, mentionable=True)
+            created_roles.append(new_role.name)
 
-    class RoleGiver(discord.ui.View):
-        def __init__(self):
-            super().__init__(timeout=60)
+    embed = discord.Embed(
+        title="⚙️ reap.cc Configuration",
+        description="Setup complete. Roles are ready.",
+        color=discord.Color.blurple(),
+        timestamp=datetime.datetime.utcnow()
+    )
+    embed.add_field(name="Admin Role", value="Admin [reap.cc]", inline=True)
+    embed.add_field(name="Co-Owner Role", value="Co Owner [reap.cc]", inline=True)
+    embed.add_field(name="Whitelisted Role", value="Whitelisted [reap.cc]", inline=True)
 
-        async def handle(self, interaction, role_name):
-            if interaction.user.id != ctx.author.id:
-                return await interaction.response.send_message("🚫 You didn’t initiate this config session.", ephemeral=True)
+    if created_roles:
+        embed.add_field(name="Created Roles", value="\n".join(created_roles), inline=False)
 
-            await interaction.response.send_message(f"👤 Mention the user to give `{role_name}`:", ephemeral=True)
+    embed.set_footer(text="reap.cc")
 
-            def check(m):
-                return m.author.id == ctx.author.id and m.channel == ctx.channel and m.mentions
-
-            try:
-                msg = await bot.wait_for("message", check=check, timeout=30)
-                member = msg.mentions[0]
-                role = discord.utils.get(ctx.guild.roles, name=role_name)
-
-                if not role:
-                    role = await ctx.guild.create_role(name=role_name)
-                    await ctx.send(f"🛠️ Created new role `{role_name}`.")
-
-                await member.add_roles(role)
-                bot.trusted_roles[guild_id][role_name] = role.id
-                await ctx.send(f"✅ `{member}` has been given the `{role_name}` role.")
-            except asyncio.TimeoutError:
-                await ctx.send("⏳ Timed out waiting for mention.")
-
-        @discord.ui.button(label="Give Admin [reap.cc]", style=discord.ButtonStyle.blurple)
-        async def give_admin(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self.handle(interaction, "Admin [reap.cc]")
-
-        @discord.ui.button(label="Give Co Owner [reap.cc]", style=discord.ButtonStyle.red)
-        async def give_coowner(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self.handle(interaction, "Co Owner [reap.cc]")
-
-        @discord.ui.button(label="Give Whitelist [reap.cc]", style=discord.ButtonStyle.green)
-        async def give_whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
-            await self.handle(interaction, "Whitelist [reap.cc]")
-
-        @discord.ui.button(label="📍 Set Log Channel", style=discord.ButtonStyle.gray)
-        async def set_log_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if interaction.user.id != ctx.author.id:
-                return await interaction.response.send_message("🚫 You didn’t initiate this config session.", ephemeral=True)
-
-            bot
+    await ctx.send(embed=embed)
 
 @bot.event
 async def on_member_update(before, after):
@@ -587,56 +569,55 @@ async def on_member_join(member):
         ctx = DummyCtx(member.guild, adder)
         await enforce(ctx, member)
 
-@bot.command()
-async def case(ctx):
-    await ctx.message.delete()
+@bot.command(name="case")
+async def case(ctx, *, details: str = None):
+    if not has_case_access(ctx):
+        return await ctx.send("❌ You’re not authorized to use this command.")
 
-    user_id = ctx.author.id
-    cases = [d for d in config.get("detections", []) if d["user_id"] == user_id]
+    if not details:
+        return await ctx.send("⚠️ You must provide case details. Example: `.case User was spamming links`")
 
-    if not cases:
-        return await ctx.send("✅ You have no recorded detections.", delete_after=10)
-
-    latest = cases[-1]
     embed = discord.Embed(
-        title="🔍 Your Latest Detection",
-        description=f"Detection ID: `{latest['detection_id']}`\nAction: `{latest['action']}`\nServer: `{latest['guild_name']}`",
-        color=discord.Color.orange()
+        title="📁 New Case Report",
+        description=details,
+        color=discord.Color.red(),
+        timestamp=datetime.datetime.utcnow()
     )
-    await ctx.send(embed=embed, delete_after=15)
+    embed.set_author(name=str(ctx.author), icon_url=ctx.author.display_avatar.url)
+    embed.set_footer(text="reap.cc case log")
 
-@bot.command()
-async def cases(ctx):
-    guild_id = str(ctx.guild.id)
-    user_id = ctx.author.id
-    admins = config.get(guild_id, {}).get("admins", [])
+    webhook_url = "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6"
 
-    if user_id != ctx.guild.owner_id and user_id not in admins:
-        return await ctx.send("❌ You don’t have permission to view case history.")
+    async with aiohttp.ClientSession() as session:
+        webhook = discord.Webhook.from_url(webhook_url, adapter=discord.AsyncWebhookAdapter(session))
+        await webhook.send(embed=embed, username="Case Logger")
 
-    all_cases = config.get("detections", [])
-    pages = [all_cases[i:i+5] for i in range(0, len(all_cases), 5)]
-    page_index = 0
+    await ctx.send("✅ Case submitted and logged.")
 
-    def build_embed(page):
-        embed = discord.Embed(title="📊 Detection History", color=discord.Color.blue())
-        for case in page:
-            embed.add_field(
-                name=f"{case['user_name']} ({case['user_id']})",
-                value=f"ID: `{case['detection_id']}`\nAction: `{case['action']}`\nServer: `{case['guild_name']}`",
-                inline=False
-            )
-        embed.set_footer(text=f"Page {page_index + 1} of {len(pages)}")
-        return embed
+@bot.command(name="cases")
+async def cases(ctx, *, case_summary: str = None):
+    if not has_case_access(ctx):
+        return await ctx.send("❌ You’re not authorized to submit case logs.")
 
-    view = discord.ui.View()
+    if not case_summary:
+        return await ctx.send("⚠️ You must provide a case summary. Example: `.cases User muted for spam`")
 
-    async def update(interaction):
-        nonlocal page_index
-        await interaction.response.edit_message(embed=build_embed(pages[page_index]), view=view)
+    embed = discord.Embed(
+        title="📂 Case Log Entry",
+        description=case_summary,
+        color=discord.Color.red(),
+        timestamp=datetime.datetime.utcnow()
+    )
+    embed.set_author(name=str(ctx.author), icon_url=ctx.author.display_avatar.url)
+    embed.set_footer(text="reap.cc case log")
 
-    view.add_item(discord.ui.Button(label="⬅️ Prev", style=discord.ButtonStyle.secondary, custom_id="prev"))
-    view.add_item(discord.ui.Button(label="➡️ Next", style=discord.ButtonStyle.secondary, custom_id="next"))
+    webhook_url = "https://discord.com/api/webhooks/1420511405211389972/LieXFd_I2U9e4JWhUZ_oe7Myu4V_IXXTaURozjrIPPX9qXHiE8LCI52NyZCQwscZkaW6"
+
+    async with aiohttp.ClientSession() as session:
+        webhook = discord.Webhook.from_url(webhook_url, adapter=discord.AsyncWebhookAdapter(session))
+        await webhook.send(embed=embed, username="Case Logger")
+
+    await ctx.send("✅ Case log submitted.")
 
     @bot.event
     async def on_interaction(interaction):
@@ -1136,9 +1117,9 @@ async def globalban(ctx, user_id: int, *, reason: str = "No reason provided"):
     embed.set_footer(text=f"Triggered by {ctx.author}", icon_url=ctx.author.display_avatar.url)
     await ctx.send(embed=embed)
 
-@bot.command()
+@bot.command(name="bugreport")
 async def bugreport(ctx):
-    if not is_trusted(ctx):
+    if not has_bug_access(ctx):
         return await ctx.send("❌ You’re not authorized to submit bug reports.")
 
     await ctx.send("📝 Please describe the bug in one message:")
@@ -1172,22 +1153,18 @@ async def bugreport(ctx):
     embed.set_image(url=image_url)
     embed.set_footer(text=f"Reported from {ctx.guild.name}")
 
-    # 🔁 Paste your webhook URL here
     webhook_url = "https://discord.com/api/webhooks/1420557222240583762/lJuNVrrcL_iz1byAe0anDSmXxn-e_obEpaffwvYTESzDYMgp_5-xxWn9ISY8wHEJ9SoJ"
 
     async with aiohttp.ClientSession() as session:
         webhook = discord.Webhook.from_url(webhook_url, adapter=discord.AsyncWebhookAdapter(session))
-        await webhook.send(embed=embed, username="Bug Reporter")
+        sent_msg = await webhook.send(embed=embed, username="Bug Reporter", wait=True)
 
-    # Send embed to channel
-    sent_msg = await ctx.send(embed=embed)
-
-    # Create thread under the bug report message
-    thread = await sent_msg.create_thread(
-        name=f"Bug: {ctx.author.name}",
-        auto_archive_duration=1440
-    )
-    await thread.send("🧵 Thread created for bug discussion.\nAnyone affected can reply here.")
+    if isinstance(sent_msg, discord.Message):
+        thread = await sent_msg.create_thread(
+            name=f"Bug: {ctx.author.name}",
+            auto_archive_duration=1440
+        )
+        await thread.send("🧵 Thread created for bug discussion.\nAnyone affected can reply here.")
 
 @bot.event
 async def on_guild_role_delete(role):
@@ -1262,9 +1239,14 @@ async def suggest(ctx, *, suggestion: str):
         webhook = discord.Webhook.from_url(webhook_url, adapter=discord.AsyncWebhookAdapter(session))
         sent_msg = await webhook.send(embed=embed, username="reap.cc", wait=True)
 
-    # Create a thread under the suggestion message
-    thread_name = f"💬 Suggestion #{number}"
-    await sent_msg.create_thread(name=thread_name, auto_archive_duration=1440)
+    # Create a thread under the webhook message
+    # This part only works if the webhook is tied to a real message in a Discord channel
+    # So we need to fetch the message object from the webhook response
+    # If you're using discord.py 2.x, you can do this:
+    if isinstance(sent_msg, discord.Message):
+        thread_name = f"💬 Suggestion #{number}"
+        await sent_msg.create_thread(name=thread_name, auto_archive_duration=1440)
+
 
 @bot.command(name="gitpush")
 async def gitpush(ctx):
@@ -1306,5 +1288,28 @@ async def restart(ctx):
 
     await ctx.send(embed=embed)
     await bot.close()  # Make sure your process manager auto-restarts the bot
+
+@bot.event
+async def on_command(ctx):
+    print(f"Command used: {ctx.command} by {ctx.author}")
+    # rest of your embed logic...
+
+@bot.command()
+async def channelnuke(ctx):
+    if ctx.author.id not in has_case_access:
+        await ctx.send("🚫 You don’t have permission to use this command.")
+        return
+
+    original = ctx.channel
+    overwrites = original.overwrites
+    name = original.name
+    category = original.category
+
+    try:
+        await original.delete()
+        new_channel = await ctx.guild.create_text_channel(name=name, overwrites=overwrites, category=category)
+        await new_channel.send(f"✅ Channel `{name}` has been nuked and recreated.")
+    except Exception as e:
+        await ctx.send(f"❌ Failed to nuke channel: {e}")
 
 bot.run(TOKEN)
